@@ -27,10 +27,17 @@ ts.prepare.data <- function(ts,
 
   # Handling time series and external regressors
   if (!is.null(xreg)) {
-    exo_v <- dim((xreg))[2]
+    exo_v <- ifelse(is.null(dim(xreg)[2]), 1, dim(xreg)[2])
+    if (length(xregLag) != 1 && length(xregLag) != exo_v) {
+      stop('Dimension of xregLag does not coincide with number of exogenous variables.')
+    }
+    if (length(xregLag) == 1) {
+      xregLag <- rep(xregLag, exo_v)
+    }
     for (var in 1:exo_v) {
-      lag_x <- lagmatrix(as.ts(xreg[, var]), lag = c(0:xregLag))
-      var_names <- c(var_names, paste(colnames(xreg)[var], c(0:xregLag), sep='_'))
+      xregLag_v <- xregLag[var]
+      lag_x <- lagmatrix(as.ts(xreg[, var]), lag = c(0:xregLag_v))
+      var_names <- c(var_names, paste(colnames(xreg)[var], c(0:xregLag_v), sep='_'))
       feature_mat <- cbind(feature_mat, lag_x)
     }
 
@@ -43,8 +50,8 @@ ts.prepare.data <- function(ts,
 
 
   # Adjusting data based on lag
-  if (xregLag >= tsLag) {
-    data_all <- all_feature[-c(1:xregLag),]
+  if (max(xregLag) >= tsLag) {
+    data_all <- all_feature[-c(1:max(xregLag)),]
   } else {
     data_all <- all_feature[-c(1:tsLag),]
   }
@@ -69,11 +76,13 @@ ts.prepare.data <- function(ts,
 #' @param ScaleInput Flag to indicate if xreg shall be scaled before training
 #' @param BatchSize Batch size to use during training
 #' @param LSTMActivationFn Activation function for LSTM layers
+#' @param LSTMRecurrentActivationFn Recurrent activation function for LSTM layers
 #' @param DenseActivationFn Activation function for Extra Dense layers
 #' @param ValidationSplit Validation split ration
 #' @param verbose Indicate how much information is given during training. Accepted values, 0, 1 or 2.
 #' @param RandomState seed for replication
 #' @param EarlyStopping EarlyStopping according to 'keras'
+#' @param ... Extra arguments passed to keras::layer_lstm
 #' @import keras tensorflow tsutils stats
 #' @return LSTMmodel object
 #' @export
@@ -111,6 +120,7 @@ ts.lstm <- function(ts,
                     ScaleInput = c(NULL, "scale", "minmax"),
                     BatchSize = 1,
                     LSTMActivationFn = 'tanh',
+                    LSTMRecurrentActivationFn = 'sigmoid',
                     DenseActivationFn = 'relu',
                     ValidationSplit = 0.1,
                     verbose=2,
@@ -119,7 +129,8 @@ ts.lstm <- function(ts,
                                                 min_delta = 0,
                                                 patience = 3,
                                                 verbose = 0,
-                                                mode = "auto")
+                                                mode = "auto"),
+                    ...
                     ) {
   if (!is.null(RandomState)) {
     set_random_seed(RandomState)
@@ -192,8 +203,10 @@ ts.lstm <- function(ts,
         units = lstmn,
         batch_input_shape  = c(BatchSize, 1, feature),
         activation = LSTMActivationFn,
+        recurrent_activation = LSTMRecurrentActivationFn,
         dropout = DropoutRate,
-        return_sequences = TRUE
+        return_sequences = TRUE,
+        ...
       )
       input_layer <- FALSE
     } else {
@@ -201,7 +214,8 @@ ts.lstm <- function(ts,
         units = lstmn,
         activation = LSTMActivationFn,
         dropout = DropoutRate,
-        return_sequences = TRUE
+        return_sequences = TRUE,
+        ...
       )
 
     }
@@ -389,16 +403,16 @@ predict.LSTMModel <-  function(object,
   }
 
   if (!is.null(horizon)) {
-    if (!is.null(xreg) && is.null(xreg.new)) {
-      stop("New data of exogenous variables is needed.")
-    }
-
-    row_xreg <- ifelse(is.null(dim(xreg.new)), length(xreg.new), dim(xreg.new)[1])
-    if (row_xreg < horizon) {
-      stop(
-        "Not enough samples in the exogenous variables (xreg.new) to predict."
-      )
-
+    if (!is.null(xreg)){
+      if (is.null(xreg.new)) {
+        stop("New data of exogenous variables is needed.")
+      }
+      row_xreg <- ifelse(is.null(dim(xreg.new)), length(xreg.new), dim(xreg.new)[1])
+      if (row_xreg < horizon) {
+        stop(
+          "Not enough samples in the exogenous variables (xreg.new) to predict."
+        )
+      }
     }
 
     # Check if new input shall be scaled

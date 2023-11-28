@@ -20,12 +20,14 @@ ts.lstm(
   ScaleInput = c(NULL, "scale", "minmax"),
   BatchSize = 1,
   LSTMActivationFn = "tanh",
+  LSTMRecurrentActivationFn = "sigmoid",
   DenseActivationFn = "relu",
   ValidationSplit = 0.1,
   verbose = 2,
   RandomState = NULL,
   EarlyStopping = EarlyStopping(monitor = "val_loss", min_delta = 0, patience = 3,
-    verbose = 0, mode = "auto")
+    verbose = 0, mode = "auto"),
+  ...
 )
 }
 \arguments{
@@ -59,6 +61,8 @@ ts.lstm(
 
 \item{LSTMActivationFn}{Activation function for LSTM layers}
 
+\item{LSTMRecurrentActivationFn}{Recurrent activation function for LSTM layers}
+
 \item{DenseActivationFn}{Activation function for Extra Dense layers}
 
 \item{ValidationSplit}{Validation split ration}
@@ -68,6 +72,8 @@ ts.lstm(
 \item{RandomState}{seed for replication}
 
 \item{EarlyStopping}{EarlyStopping according to 'keras'}
+
+\item{...}{Extra arguments passed to keras::layer_lstm}
 }
 \value{
 LSTMmodel object
