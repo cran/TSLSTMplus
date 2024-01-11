@@ -1,9 +1,9 @@
-95de46be78a04246a057db4c6bf1c991 *DESCRIPTION
+486d1b5f6a8811b9213272d63ed69d4f *DESCRIPTION
 d5adcbfbcd6f9f74ae5e10c8e4f72fb3 *NAMESPACE
-28d34cf0cb9a261f0e565495ba5ee80f *R/TSLSTM.R
-2df7576e278fa66ee00d6e8875d257cd *man/LSTMModel.Rd
+db69b9bff4f9395fe566b49cdedf036b *R/TSLSTM.R
+6fdc306df5a9eb75a56c81671e2870c4 *man/LSTMModel.Rd
 434d6ce9b3efaa698d679ccfb78fe6f3 *man/minmax_scale.Rd
-d76d41857dd7ace596e447742fb8fa8d *man/predict.LSTMModel.Rd
+4284a6fcee7026ab7f72de3ba0381b69 *man/predict.LSTMModel.Rd
 8b8b79d7c79ca4a09000ea419c19b3c6 *man/summary.LSTMModel.Rd
-bcffe1ad09622946c730e5e93525d323 *man/ts.lstm.Rd
-929df2059312bfe42a090b82a68677ca *man/ts.prepare.data.Rd
+42f1ebfce54fbfaa6d37b41a61ee6f91 *man/ts.lstm.Rd
+57d7a4730ea4f8b00755beab7ff634da *man/ts.prepare.data.Rd

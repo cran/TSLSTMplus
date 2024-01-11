@@ -7,7 +7,7 @@
 ts.lstm(
   ts,
   xreg = NULL,
-  tsLag,
+  tsLag = NULL,
   xregLag = 0,
   LSTMUnits,
   DenseUnits = NULL,
@@ -25,8 +25,10 @@ ts.lstm(
   ValidationSplit = 0.1,
   verbose = 2,
   RandomState = NULL,
-  EarlyStopping = EarlyStopping(monitor = "val_loss", min_delta = 0, patience = 3,
-    verbose = 0, mode = "auto"),
+  EarlyStopping = callback_early_stopping(monitor = "val_loss", min_delta = 0, patience =
+    3, verbose = 0, mode = "auto"),
+  LagsAsSequences = TRUE,
+  Stateful = FALSE,
   ...
 )
 }
@@ -35,7 +37,7 @@ ts.lstm(
 
 \item{xreg}{Exogenous variables}
 
-\item{tsLag}{Lag of time series data}
+\item{tsLag}{Lag of time series data. If NULL, no lags of the output are used.}
 
 \item{xregLag}{Lag of exogenous variables}
 
@@ -72,6 +74,10 @@ ts.lstm(
 \item{RandomState}{seed for replication}
 
 \item{EarlyStopping}{EarlyStopping according to 'keras'}
+
+\item{LagsAsSequences}{Use lags as previous timesteps of features, otherwise use them as "extra" features.}
+
+\item{Stateful}{Flag to indicate if LSTM layers shall retain its state between batches.}
 
 \item{...}{Extra arguments passed to keras::layer_lstm}
 }

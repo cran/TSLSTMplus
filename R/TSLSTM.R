@@ -1,8 +1,3 @@
-library(keras)
-library(tensorflow)
-library(tsutils)
-library(stats)
-
 #' @title Prepare data for Long Short Term Memory (LSTM) Model for Time Series Forecasting
 #' @description The LSTM (Long Short-Term Memory) model is a Recurrent Neural Network (RNN) based architecture that is widely used for time series forecasting. Min-Max transformation has been used for data preparation. Here, we have used one LSTM layer as a simple LSTM model and a Dense layer is used as the output layer. Then, compile the model using the loss function, optimizer and metrics. This package is based on 'keras' and TensorFlow modules.
 #' @param ts Time series data
@@ -17,7 +12,6 @@ library(stats)
 #'   x2 <- rnorm(100, mean=50, sd=25)
 #'   x <- cbind(x1,x2)
 #'   ts.prepare.data(y, x, 2, 4)
-#'
 ts.prepare.data <- function(ts,
                             xreg = NULL,
                             tsLag,
@@ -43,17 +37,19 @@ ts.prepare.data <- function(ts,
 
   }
 
+  tsLag <- ifelse(is.null(tsLag), 0, tsLag)
   lag_y <- lagmatrix(as.ts(ts), lag = c(0:(tsLag)))
   var_names <- c(paste('y', c(0:tsLag), sep='_'), var_names)
   all_feature <- data.frame(cbind(lag_y, feature_mat))
   colnames(all_feature) <- var_names
 
-
   # Adjusting data based on lag
-  if (max(xregLag) >= tsLag) {
-    data_all <- all_feature[-c(1:max(xregLag)),]
-  } else {
-    data_all <- all_feature[-c(1:tsLag),]
+  if (sum(c(xregLag, tsLag)) > 0) {
+    if (max(xregLag) >= tsLag) {
+      data_all <- all_feature[-c(1:max(xregLag)),]
+    } else {
+      data_all <- all_feature[-c(1:tsLag),]
+    }
   }
 
   return(data_all)
@@ -63,7 +59,7 @@ ts.prepare.data <- function(ts,
 #' @description The LSTM (Long Short-Term Memory) model is a Recurrent Neural Network (RNN) based architecture that is widely used for time series forecasting. Min-Max transformation has been used for data preparation. Here, we have used one LSTM layer as a simple LSTM model and a Dense layer is used as the output layer. Then, compile the model using the loss function, optimizer and metrics. This package is based on 'keras' and TensorFlow modules.
 #' @param ts Time series data
 #' @param xreg Exogenous variables
-#' @param tsLag Lag of time series data
+#' @param tsLag Lag of time series data. If NULL, no lags of the output are used.
 #' @param xregLag Lag of exogenous variables
 #' @param LSTMUnits Number of unit in LSTM layers
 #' @param DenseUnits Number of unit in Extra Dense layers. A Dense layer with a single neuron is always added at the end.
@@ -82,6 +78,8 @@ ts.prepare.data <- function(ts,
 #' @param verbose Indicate how much information is given during training. Accepted values, 0, 1 or 2.
 #' @param RandomState seed for replication
 #' @param EarlyStopping EarlyStopping according to 'keras'
+#' @param LagsAsSequences Use lags as previous timesteps of features, otherwise use them as "extra" features.
+#' @param Stateful Flag to indicate if LSTM layers shall retain its state between batches.
 #' @param ... Extra arguments passed to keras::layer_lstm
 #' @import keras tensorflow tsutils stats
 #' @return LSTMmodel object
@@ -107,7 +105,7 @@ ts.prepare.data <- function(ts,
 #' Paul, R.K. and Garai, S. (2021). Performance comparison of wavelets-based machine learning technique for forecasting agricultural commodity prices, Soft Computing, 25(20), 12857-12873
 ts.lstm <- function(ts,
                     xreg = NULL,
-                    tsLag,
+                    tsLag = NULL,
                     xregLag = 0,
                     LSTMUnits,
                     DenseUnits = NULL,
@@ -125,11 +123,13 @@ ts.lstm <- function(ts,
                     ValidationSplit = 0.1,
                     verbose=2,
                     RandomState=NULL,
-                    EarlyStopping=EarlyStopping(monitor = "val_loss",
+                    EarlyStopping=callback_early_stopping(monitor = "val_loss",
                                                 min_delta = 0,
                                                 patience = 3,
                                                 verbose = 0,
                                                 mode = "auto"),
+                    LagsAsSequences = TRUE,
+                    Stateful = FALSE,
                     ...
                     ) {
   if (!is.null(RandomState)) {
@@ -176,36 +176,74 @@ ts.lstm <- function(ts,
                             range = attr(scaler_output, "scaled:range"))
     }
   }
+  if (is.null(xreg) && is.null(tsLag)) {
+    stop('LSTM training needs output lags and/or external regressors.')
+  }
+
+  if (Stateful && !LagsAsSequences) {
+    warning("Lags shall be treated as sequences if LSTM is stateful. Turning LagsAsSequences to TRUE")
+    LagsAsSequences <- TRUE
+  }
+
+  # Check if all lags are declared as necessary for stateful training
+  if (LagsAsSequences) {
+    max_lag <- max(c(xregLag, tsLag))
+    if (is.null(tsLag)) {
+      if (!all(xregLag == max_lag)) {
+        warning(paste0('Training a LSTM with LagsAsSequences needs the same lags for all inputs.\nLSTM will be train with', max_lag, 'for inputs.', sep=' '))
+
+        xregLag <- max_lag
+      }
+    } else {
+      if (!all(c(xregLag, tsLag) == max_lag)) {
+        warning(paste0('Training a LSTM with LagsAsSequences needs the same lags for all inputs and output.LSTM will be train with', max_lag, 'for inputs and output.', sep=' '))
+        tsLag <- xregLag <- max_lag
+      }
+    }
+  }
 
   ### Lag selection and data matrix preparation ###
   data <- ts.prepare.data(ts, xreg, tsLag, xregLag)
 
-  # Preparing data for the model
-  feature <- ncol(data) - 1
-
-  ##################### Data Split #################################
 
   # Split between inputs and output
   inputs <- data[, -1]
   output <- data[, 1]
 
   # Data Array Preparation for LSTM
-  x_lstm <- data.matrix(inputs)
-  dim(x_lstm) <- c(dim(x_lstm)[1], 1, feature)
+  if (LagsAsSequences) {
+    feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(tsLag), 1, 0)
+    x_lstm <- array(data.matrix(inputs), c(dim(inputs)[1], max(c(tsLag, xregLag)), feature))
+    x_lstm <- x_lstm[,dim(x_lstm)[2]:1,] # Reverse order of lags
+  } else {
+    # Preparing data for the model
+    feature <- ncol(data) - 1
+    x_lstm <- data.matrix(inputs)
+    dim(x_lstm) <- c(dim(x_lstm)[1], 1, feature)
+  }
   y_lstm <- data.matrix(output)
 
   # LSTM model construction
   lstm_model <- keras_model_sequential()
-  input_layer <- TRUE
-  for (lstmn in LSTMUnits) {
+  input_layer <- TRUEtotal_layers <- length(LSTMUnits)
+
+  total_layers <- length(LSTMUnits)
+
+  for (i in seq_along(LSTMUnits)) {
+    lstmn <- LSTMUnits[i]
+
+    # Check if the current layer is the last one
+    is_last_layer <- (i == total_layers)
+
     if (input_layer) {
       lstm_model <- lstm_model %>% layer_lstm(
         units = lstmn,
-        batch_input_shape  = c(BatchSize, 1, feature),
+        batch_input_shape  = c(BatchSize, ifelse(LagsAsSequences, max_lag, 1), feature),
         activation = LSTMActivationFn,
         recurrent_activation = LSTMRecurrentActivationFn,
         dropout = DropoutRate,
-        return_sequences = TRUE,
+        return_sequences = !is_last_layer,
+        stateful = Stateful,
         ...
       )
       input_layer <- FALSE
@@ -214,7 +252,8 @@ ts.lstm <- function(ts,
         units = lstmn,
         activation = LSTMActivationFn,
         dropout = DropoutRate,
-        return_sequences = TRUE,
+        return_sequences = !is_last_layer,
+        stateful = Stateful,
         ...
       )
 
@@ -242,23 +281,75 @@ ts.lstm <- function(ts,
   model_structure <- capture.output(summary(lstm_model))
 
   # Fitting the model on training data
-  lstm_history <- lstm_model %>%
-    fit(
-      x_lstm, y_lstm,
-      batch_size = BatchSize,
-      epochs = Epochs,
-      validation_split = ValidationSplit,
-      verbose = verbose,
-      shuffle = FALSE
-    )
+  if (LagsAsSequences) {
 
+    if (ValidationSplit > 0) {
+      total_samples <- dim(x_lstm)[1]
+      train_size <- floor(total_samples * (1-ValidationSplit))
+      x_valid <- x_lstm[(train_size + 1):total_samples,,, drop=FALSE]
+      y_valid <- y_lstm[(train_size + 1):total_samples,, drop=FALSE]
+      x_lstm <- x_lstm[1:train_size,,, drop=FALSE]
+      y_lstm <- y_lstm[1:train_size,, drop=FALSE]
+      data_valid <- list(x_valid, y_valid)
+      steps_valid <- floor(dim(y_valid)[1] / BatchSize)
+    } else {
+      data_valid <- NULL
+      steps_valid <- NULL
+    }
+
+    if (Stateful){
+      for (e in 1:Epochs) {
+        print(paste0("Epoch ", e, "/", Epochs))
+        lstm_history <- lstm_model %>%
+          fit(
+            x_lstm, y_lstm,
+            batch_size = BatchSize,
+            verbose = verbose,
+            steps_per_epoch = floor(dim(y_lstm)[1] / BatchSize),
+            validation_data = data_valid,
+            validation_steps = steps_valid,
+            callbacks = list(EarlyStopping),
+            epochs = 1
+          )
+
+        lstm_model %>% reset_states()
+      }
+    } else {
+      lstm_history <- lstm_model %>%
+        fit(
+          x_lstm, y_lstm,
+          batch_size = BatchSize,
+          verbose = verbose,
+          # steps_per_epoch = floor(dim(y_lstm)[1] / BatchSize),
+          validation_data = data_valid,
+          # validation_steps = steps_valid,
+          callbacks = list(EarlyStopping),
+          epochs = Epochs
+        )
+
+    }
+  } else {
+    lstm_history <- lstm_model %>%
+      fit(
+        x_lstm, y_lstm,
+        batch_size = BatchSize,
+        epochs = Epochs,
+        validation_split = ValidationSplit,
+        verbose = verbose,
+        callbacks = list(EarlyStopping),
+        shuffle = FALSE
+      )
+  }
 
   # Create an LSTMModel object with additional parameters
   lstm_model_object <- LSTMModel(lstm_model,
                                  ScaleOutput, scaler_output,
                                  ScaleInput, scaler_input,
                                  tsLag, xregLag,
-                                 model_structure)
+                                 model_structure,
+                                 BatchSize,
+                                 LagsAsSequences,
+                                 Stateful)
 
   return(lstm_model_object)
 }
@@ -273,6 +364,9 @@ ts.lstm <- function(ts,
 #' @param tsLag Lag of time series data
 #' @param xregLag Lag of exogenous variables
 #' @param model_structure Summary of the LSTM model previous to training
+#' @param batch_size Batch size used during training of the model
+#' @param lags_as_sequences Flag to indicate the model has been trained statefully
+#' @param stateful Flag to indicate if LSTM layers shall retain its state between batches.
 #' @return LSTMModel object
 #' @export
 #' @examples
@@ -302,7 +396,10 @@ LSTMModel <- function(lstm_model,
            scaler_input,
            tsLag,
            xregLag,
-           model_structure) {
+           model_structure,
+           batch_size,
+           lags_as_sequences,
+           stateful) {
     structure(
       list(
         lstm_model = lstm_model,
@@ -312,7 +409,10 @@ LSTMModel <- function(lstm_model,
         scaler_input = scaler_input,
         tsLag = tsLag,
         xregLag = xregLag,
-        model_structure = model_structure
+        model_structure = model_structure,
+        batch_size = batch_size,
+        lags_as_sequences = lags_as_sequences,
+        stateful = stateful
       ),
       class = "LSTMModel"
     )
@@ -327,7 +427,7 @@ LSTMModel <- function(lstm_model,
 #' @param ts A vector or time series object containing the historical time series data. It should have a number of observations at least equal to the lag of the time series data.
 #' @param xreg (Optional) A matrix or data frame of exogenous variables to be used for prediction. It should have a number of rows at least equal to the lag of the exogenous variables.
 #' @param xreg.new (Optional) A matrix or data frame of exogenous variables to be used for prediction. It should have a number of rows at least equal to the lag of the exogenous variables.
-#' @param BatchSize Batch size to use during training
+#' @param BatchSize (Optional) Batch size to use during prediction
 #' @param ... Optional arguments, no use is contemplated right now
 #' @return A vector containing the forecasted values for the specified horizon.
 #' @examples
@@ -359,7 +459,7 @@ predict.LSTMModel <-  function(object,
            xreg = NULL,
            xreg.new = NULL,
            horizon = NULL,
-           BatchSize = 1 ,
+           BatchSize = NULL,
            ...) {
 
   # Calculate how many samples we need from inputs and output based on lags
@@ -372,7 +472,8 @@ predict.LSTMModel <-  function(object,
     )
   }
   freq_ts <- frequency(ts)
-  end_ts <- end(ts) #+ ifelse(!is.null(horizon), horizon, 0)
+  end_ts <- end(ts)
+
   if (!is.null(object$scale_output)) {
     if (object$scale_output == 'scale') {
       ts <- scale(ts, center = object$scaler_output$center, scale = object$scaler_output$scale)
@@ -402,6 +503,10 @@ predict.LSTMModel <-  function(object,
     }
   }
 
+  if (object$stateful) {
+    object$lstm_model %>% reset_states()
+  }
+
   if (!is.null(horizon)) {
     if (!is.null(xreg)){
       if (is.null(xreg.new)) {
@@ -428,49 +533,150 @@ predict.LSTMModel <-  function(object,
     prediction_normalized <- numeric(horizon + 1)
 
     # Loop for each step in the prediction horizon
-    for (i in 1:horizon) {
+    batch_size <- ifelse(is.null(BatchSize) || object$stateful, object$batch_size, BatchSize)
+
+    total_batches <- ceiling(horizon / batch_size)
+
+    # Data Array Preparation for LSTM
+    feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(object$tsLag), 1, 0)
+
+    if (object$stateful) {
+      # Prepare data for prediction
+      data <- ts.prepare.data(ts, xreg, object$tsLag, object$xregLag)
+
+      inputs <- data[, -1]
+
+      x_lstm <- array(data.matrix(inputs), c(dim(inputs)[1],
+                                             max(c(object$tsLag, object$xregLag)),
+                                             feature))
+
+      # Update states of lstm object with training data
+      padding_needed <- batch_size - dim(x_lstm)[1] %% batch_size
+
+      # Create padding - an array of zeros with the same shape as x_lstm
+      # Assuming your features are the last dimension
+      padding <- array(0, dim = c(padding_needed, dim(x_lstm)[2], dim(x_lstm)[3]))
+
+      # Append the padding to x_lstm
+      x_lstm <- abind::abind(padding, x_lstm, along=1)
+
+
+      object$lstm_model %>% predict(x_lstm)
+
+    }
+
+    for (batch in 1:total_batches) {
+      # Determine the number of predictions to make in this batch
+      predictions_this_batch <- min(batch_size, horizon - (batch - 1) * batch_size)
+      start_index <- (batch - 1) * batch_size + 1
+      end_index <- start_index + predictions_this_batch - 1
 
       # Add new data to exogenous variables
       if (!is.null(xreg)) {
-        xreg <- rbind(xreg, xreg.new[i,,drop=FALSE])
+        xreg <- rbind(xreg, xreg.new[start_index:end_index,,drop=FALSE])
       }
 
-      # Prepare data for prediction
-      data <- ts.prepare.data(tail(ts,n=max_lags + 1), tail(xreg,n=max_lags + 1) ,
-                  object$tsLag, object$xregLag)
+      # Prepare the data for prediction
+      data <- ts.prepare.data(tail(ts, n=max_lags + predictions_this_batch),
+                              tail(xreg, n=max_lags + predictions_this_batch),
+                              object$tsLag, object$xregLag)
 
-      # Substitute lags of output, as now the lag_0 is the lag_1
+      # Update the lags
       data[,2:(object$tsLag + 1)] <- data[,1:object$tsLag]
 
       # Split between inputs and output
       inputs <- data[, -1, drop=FALSE]
+      if (!object$lags_as_sequences) {
+        # Data Array Preparation for LSTM
+        x_lstm <- data.matrix(inputs)
+        dim(x_lstm) <- c(dim(x_lstm)[1], 1, dim(x_lstm)[2])
 
-      # Data Array Preparation for LSTM
-      x_lstm <- data.matrix(inputs)
-      dim(x_lstm) <- c(dim(x_lstm)[1], 1, dim(x_lstm)[2])
+        # Model evaluation and prediction on test data
+        current_prediction <- object$lstm_model %>% predict(x_lstm)
 
-      # Model evaluation and prediction on test data
-      current_prediction <- object$lstm_model %>% predict(x_lstm)
+        # Add current_prediction as last_sample of ts
+        ts <- c(ts, current_prediction[,])
 
-      # Add current_prediction as last_sample of ts
-      ts <- c(ts, current_prediction[,,])
+        # Add current prediction
+        prediction_normalized[start_index:end_index] <- current_prediction[,]
+      } else {
+        x_lstm <- array(data.matrix(inputs),
+                        c(dim(inputs)[1],
+                          max(c(object$tsLag, object$xregLag)),
+                          feature))
+        x_lstm <- x_lstm[,dim(x_lstm)[2]:1,, drop=FALSE] # Reverse order of lags
 
-      # Add current prediction
-      prediction_normalized[i] <- current_prediction[,,]
+        if (batch == total_batches && predictions_this_batch < batch_size) {
+          padding_needed <- batch_size - predictions_this_batch
+
+          # Create padding - an array of zeros with the same shape as x_lstm
+          # Assuming your features are the last dimension
+          padding <- array(0, dim = c(padding_needed, dim(x_lstm)[2], dim(x_lstm)[3]))
+
+          # Append the padding to x_lstm
+          x_lstm <- abind::abind(x_lstm, padding, along=1)
+        }
+
+        # Model evaluation and prediction on test data
+        current_prediction <- object$lstm_model %>% predict(x_lstm)
+
+        # Add current_prediction as last_sample of ts
+        ts <- c(ts, current_prediction[,])
+
+        # Add current prediction
+        prediction_normalized[start_index:end_index] <- current_prediction[,]
+
+      }
     }
+    prediction_normalized <- prediction_normalized[1:(length(prediction_normalized) - 1)]
   } else {
     # Prepare data for prediction
     data <- ts.prepare.data(ts, xreg, object$tsLag, object$xregLag)
 
     # Split between inputs and output
     inputs <- data[, -1]
+    if (!object$lags_as_sequences) {
+      # Data Array Preparation for LSTM
+      x_lstm <- data.matrix(inputs)
+      dim(x_lstm) <- c(dim(x_lstm)[1], 1, dim(x_lstm)[2])
 
-    # Data Array Preparation for LSTM
-    x_lstm <- data.matrix(inputs)
-    dim(x_lstm) <- c(dim(x_lstm)[1], 1, dim(x_lstm)[2])
+      # Model evaluation and prediction on test data
+      prediction_normalized <- object$lstm_model %>% predict(x_lstm)
+    } else {
+      # Data Array Preparation for LSTM
+      feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(object$tsLag), 1, 0)
 
-    # Model evaluation and prediction on test data
-    prediction_normalized <- object$lstm_model %>% predict(x_lstm)
+      x_lstm <- array(data.matrix(inputs), c(dim(inputs)[1],
+                                             max(c(object$tsLag, object$xregLag)),
+                                             feature))
+      x_lstm <- x_lstm[,dim(x_lstm)[2]:1,, drop=FALSE] # Reverse order of lags
+
+      if (object$stateful) {
+        # Calculate the padding required
+        total_samples <- dim(x_lstm)[1]
+        batch_size <- object$batch_size
+        padding_needed <- batch_size - (total_samples %% batch_size)
+        padding_needed <- ifelse(padding_needed == batch_size, 0, padding_needed)
+
+        # Pad the data
+        feature <- dim(x_lstm)[3]
+        timesteps <- dim(x_lstm)[2]
+        padding <- array(0, dim = c(padding_needed, timesteps, feature))
+        x_lstm_padded <- abind::abind(x_lstm, padding, along=1)
+
+        # Make predictions
+        prediction_normalized <- object$lstm_model %>% predict(x_lstm_padded)
+
+        # Remove predictions corresponding to the padding, if necessary
+        if (padding_needed > 0) {
+          prediction_normalized <- prediction_normalized[1:(total_samples), , drop = FALSE]
+        }
+      } else {
+        # Model evaluation and prediction on test data
+        prediction_normalized <- object$lstm_model %>% predict(x_lstm)
+
+      }
+    }
   }
 
   predicted_values <- prediction_normalized
@@ -487,12 +693,12 @@ predict.LSTMModel <-  function(object,
   if (is.null(horizon)) {
     return(ts(predicted_values,
               frequency=freq_ts,
-              end=end_ts
+              end=end_ts[1] + (end_ts[2] - 1)/freq_ts
     ))
   } else {
     return(ts(predicted_values,
               frequency=freq_ts,
-              start=end_ts + 1/freq_ts
+              start=end_ts[1] + end_ts[2]/freq_ts
     ))
   }
 }

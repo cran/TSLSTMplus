@@ -27,5 +27,4 @@ The LSTM (Long Short-Term Memory) model is a Recurrent Neural Network (RNN) base
   x2 <- rnorm(100, mean=50, sd=25)
   x <- cbind(x1,x2)
   ts.prepare.data(y, x, 2, 4)
-
 }

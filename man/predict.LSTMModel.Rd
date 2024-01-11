@@ -10,7 +10,7 @@
   xreg = NULL,
   xreg.new = NULL,
   horizon = NULL,
-  BatchSize = 1,
+  BatchSize = NULL,
   ...
 )
 }
@@ -25,7 +25,7 @@
 
 \item{horizon}{The number of future time steps to predict.}
 
-\item{BatchSize}{Batch size to use during training}
+\item{BatchSize}{(Optional) Batch size to use during prediction}
 
 \item{...}{Optional arguments, no use is contemplated right now}
 }

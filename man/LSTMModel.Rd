@@ -12,7 +12,10 @@ LSTMModel(
   scaler_input,
   tsLag,
   xregLag,
-  model_structure
+  model_structure,
+  batch_size,
+  lags_as_sequences,
+  stateful
 )
 }
 \arguments{
@@ -31,6 +34,12 @@ LSTMModel(
 \item{xregLag}{Lag of exogenous variables}
 
 \item{model_structure}{Summary of the LSTM model previous to training}
+
+\item{batch_size}{Batch size used during training of the model}
+
+\item{lags_as_sequences}{Flag to indicate the model has been trained statefully}
+
+\item{stateful}{Flag to indicate if LSTM layers shall retain its state between batches.}
 }
 \value{
 LSTMModel object
