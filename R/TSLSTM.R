@@ -791,7 +791,7 @@ minmax_scale <- function(x, min = TRUE, range = TRUE) {
   }
 
   # Store attributes
-  if (is.numeric(min)) attr(x, "scaled:min") <- min
-  if (is.numeric(range)) attr(x, "scaled:range") <- range
+  if (is.logical(min)) attr(x, "scaled:min") <- min_values
+  if (is.logical(range)) attr(x, "scaled:range") <- range_values
   x
 }
