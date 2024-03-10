@@ -43,7 +43,10 @@ ts.prepare.data <- function(ts,
   all_feature <- data.frame(cbind(lag_y, feature_mat))
   colnames(all_feature) <- var_names
 
+  data_all <- all_feature
   # Adjusting data based on lag
+  if (is.null(xregLag)) xregLag <- 0
+
   if (sum(c(xregLag, tsLag)) > 0) {
     if (max(xregLag) >= tsLag) {
       data_all <- all_feature[-c(1:max(xregLag)),]
@@ -176,13 +179,19 @@ ts.lstm <- function(ts,
                             range = attr(scaler_output, "scaled:range"))
     }
   }
-  if (is.null(xreg) && is.null(tsLag)) {
+
+  if (is.null(xreg) && (is.null(tsLag) || tsLag == 0)) {
     stop('LSTM training needs output lags and/or external regressors.')
   }
 
   if (Stateful && !LagsAsSequences) {
     warning("Lags shall be treated as sequences if LSTM is stateful. Turning LagsAsSequences to TRUE")
     LagsAsSequences <- TRUE
+  }
+
+  if (is.null(xreg)) {
+    # Set xreglag as null when no external regressors are passed
+    xregLag <- NULL
   }
 
   # Check if all lags are declared as necessary for stateful training
@@ -207,14 +216,18 @@ ts.lstm <- function(ts,
 
 
   # Split between inputs and output
-  inputs <- data[, -1]
+  inputs <- data[, -1, drop=FALSE]
   output <- data[, 1]
 
   # Data Array Preparation for LSTM
   if (LagsAsSequences) {
-    feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(tsLag), 1, 0)
+    if (!is.null(xreg)) {
+      feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(tsLag) || tsLag == 0, 0, 1)
+    } else {
+      feature <- 1
+    }
     x_lstm <- array(data.matrix(inputs), c(dim(inputs)[1], max(c(tsLag, xregLag)), feature))
-    x_lstm <- x_lstm[,dim(x_lstm)[2]:1,] # Reverse order of lags
+    x_lstm <- x_lstm[,dim(x_lstm)[2]:1,, drop=FALSE] # Reverse order of lags
   } else {
     # Preparing data for the model
     feature <- ncol(data) - 1
@@ -280,6 +293,10 @@ ts.lstm <- function(ts,
 
   model_structure <- capture.output(summary(lstm_model))
 
+
+  if (!is.null(EarlyStopping)) {
+    EarlyStopping <- list(EarlyStopping)
+  }
   # Fitting the model on training data
   if (LagsAsSequences) {
 
@@ -308,7 +325,7 @@ ts.lstm <- function(ts,
             steps_per_epoch = floor(dim(y_lstm)[1] / BatchSize),
             validation_data = data_valid,
             validation_steps = steps_valid,
-            callbacks = list(EarlyStopping),
+            callbacks = EarlyStopping,
             epochs = 1
           )
 
@@ -323,7 +340,7 @@ ts.lstm <- function(ts,
           # steps_per_epoch = floor(dim(y_lstm)[1] / BatchSize),
           validation_data = data_valid,
           # validation_steps = steps_valid,
-          callbacks = list(EarlyStopping),
+          callbacks = EarlyStopping,
           epochs = Epochs
         )
 
@@ -336,7 +353,7 @@ ts.lstm <- function(ts,
         epochs = Epochs,
         validation_split = ValidationSplit,
         verbose = verbose,
-        callbacks = list(EarlyStopping),
+        callbacks = EarlyStopping,
         shuffle = FALSE
       )
   }
@@ -538,7 +555,11 @@ predict.LSTMModel <-  function(object,
     total_batches <- ceiling(horizon / batch_size)
 
     # Data Array Preparation for LSTM
-    feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(object$tsLag), 1, 0)
+    if (!is.null(xreg)){
+      feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(object$tsLag), 0, 1)
+    } else {
+      feature <- 1
+    }
 
     if (object$stateful) {
       # Prepare data for prediction
@@ -634,7 +655,7 @@ predict.LSTMModel <-  function(object,
     data <- ts.prepare.data(ts, xreg, object$tsLag, object$xregLag)
 
     # Split between inputs and output
-    inputs <- data[, -1]
+    inputs <- data[, -1, drop=FALSE]
     if (!object$lags_as_sequences) {
       # Data Array Preparation for LSTM
       x_lstm <- data.matrix(inputs)
@@ -644,7 +665,11 @@ predict.LSTMModel <-  function(object,
       prediction_normalized <- object$lstm_model %>% predict(x_lstm)
     } else {
       # Data Array Preparation for LSTM
-      feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(object$tsLag), 1, 0)
+      if (!is.null(xreg)){
+        feature <- ifelse(is.null(dim(xreg)), ncol(xreg), dim(xreg)[2]) + ifelse(is.null(object$tsLag), 0, 1)
+      } else {
+        feature <- 1
+      }
 
       x_lstm <- array(data.matrix(inputs), c(dim(inputs)[1],
                                              max(c(object$tsLag, object$xregLag)),

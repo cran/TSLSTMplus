@@ -1,6 +1,6 @@
 Package: TSLSTMplus
 Title: Long-Short Term Memory for Time-Series Forecasting, Enhanced
-Version: 1.0.3
+Version: 1.0.4
 Authors@R: c(
     person(given = "Jaime", family = "Pizarroso Gonzalo",
       email = "jpizarroso@comillas.edu", role = c("aut","ctb", "cre")),
@@ -16,7 +16,7 @@ Encoding: UTF-8
 Imports: keras, tensorflow, tsutils, stats, abind
 NeedsCompilation: no
 RoxygenNote: 7.2.3
-Date: 2024-01-28
-Packaged: 2024-02-04 18:19:37 UTC; jaime
+Date: 2024-03-10
+Packaged: 2024-03-10 18:40:19 UTC; jpizarroso
 Repository: CRAN
-Date/Publication: 2024-02-04 18:30:02 UTC
+Date/Publication: 2024-03-10 19:10:01 UTC
