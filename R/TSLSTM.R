@@ -150,14 +150,14 @@ ts.lstm <- function(ts,
 
     if (ScaleInput == 'scale') {
       scaler_input <- scale(xreg)
-      xreg <- scaler_input[,]
+      xreg <- scaler_input[,,drop=FALSE]
       scaler_input <- list(center = attr(scaler_input, "scaled:center"),
                            scale = attr(scaler_input, "scaled:scale"))
     }
 
     if (ScaleInput == 'minmax') {
       scaler_input <- minmax_scale(xreg)
-      xreg <- scaler_input[,]
+      xreg <- scaler_input[,,drop=FALSE]
       scaler_input <- list(min = attr(scaler_input, "scaled:min"),
                            range = attr(scaler_input, "scaled:range"))
 
