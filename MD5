@@ -1,7 +1,8 @@
-d910948359f20caf23f6adc7ec27ab8a *DESCRIPTION
-d5adcbfbcd6f9f74ae5e10c8e4f72fb3 *NAMESPACE
-6f49f55abb30a95afb9abfffe26073be *R/TSLSTM.R
+02673531ed3cb44b5adb6bf08041cbbe *DESCRIPTION
+a06e2c7c13c9a79129183b12515b9ae8 *NAMESPACE
+60455b443b8edc5a03cad896676301cb *R/TSLSTM.R
 6fdc306df5a9eb75a56c81671e2870c4 *man/LSTMModel.Rd
+4a8f5c3b0633137e1c584616d81c204c *man/lagmatrix.Rd
 434d6ce9b3efaa698d679ccfb78fe6f3 *man/minmax_scale.Rd
 4284a6fcee7026ab7f72de3ba0381b69 *man/predict.LSTMModel.Rd
 8b8b79d7c79ca4a09000ea419c19b3c6 *man/summary.LSTMModel.Rd
